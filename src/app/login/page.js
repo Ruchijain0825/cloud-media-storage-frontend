@@ -1,4 +1,5 @@
 "use client"
+import { useRouter } from "next/navigation";
 import React, { useState } from "react"
 import toast from "react-hot-toast"
 
@@ -6,6 +7,7 @@ import toast from "react-hot-toast"
 
 export default function Login()
 {
+    const router = useRouter();
     
     const[email,setEmail]=useState("");
     const[password,setPassword]=useState("");
@@ -39,7 +41,9 @@ export default function Login()
 
                
             }
+            localStorage.setItem("accessToken", data.accessToken);
             toast.success(data.message||"Loggedin successfully");
+            router.push("/dashboard");
 
             
             setEmail("");
