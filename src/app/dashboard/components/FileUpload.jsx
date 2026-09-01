@@ -1,16 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-
-const ALLOWED_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-  "text/plain",
-];
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024; 
+import { fileSchema } from "@/lib/validation/file.schema";
 
 export default function FileUpload({ currentFolderId }) {
   const inputRef = useRef(null);
@@ -22,33 +13,27 @@ export default function FileUpload({ currentFolderId }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [success, setSuccess] = useState("");
 
-  const validateFile = (file) => {
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return "Only images, PDF and text files are allowed.";
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      return "File size must be less than 10 MB.";
-    }
-
-    return "";
-  };
-
   const handleFile = (file) => {
     if (!file) return;
 
     setError("");
     setSuccess("");
 
-    const validationError = validateFile(file);
+    const validation = fileSchema.safeParse({
+      file,
+    });
 
-    if (validationError) {
-      setError(validationError);
+    if (!validation.success) {
+      const message =
+        validation.error.issues[0].message;
+
+      setError(message);
       setSelectedFile(null);
+
       return;
     }
 
-    setSelectedFile(file);
+    setSelectedFile(validation.data.file);
   };
 
   const handleInputChange = (event) => {
@@ -59,19 +44,23 @@ export default function FileUpload({ currentFolderId }) {
 
   const handleDragOver = (event) => {
     event.preventDefault();
+
     setIsDragging(true);
   };
 
   const handleDragLeave = (event) => {
     event.preventDefault();
+
     setIsDragging(false);
   };
 
   const handleDrop = (event) => {
     event.preventDefault();
+
     setIsDragging(false);
 
-    const file = event.dataTransfer.files?.[0];
+    const file =
+      event.dataTransfer.files?.[0];
 
     handleFile(file);
   };
@@ -79,6 +68,7 @@ export default function FileUpload({ currentFolderId }) {
   const handleUpload = async () => {
     if (!selectedFile) {
       setError("Please select a file first.");
+
       return;
     }
 
@@ -90,52 +80,95 @@ export default function FileUpload({ currentFolderId }) {
 
       const formData = new FormData();
 
-      formData.append("file", selectedFile);
+      formData.append(
+        "file",
+        selectedFile
+      );
 
       if (currentFolderId) {
-        formData.append("folderId", currentFolderId);
+        formData.append(
+          "folderId",
+          currentFolderId
+        );
       }
-      const token = localStorage.getItem("accessToken");
 
-         if (!token) {
-          setError("Please login again.");
-          setIsUploading(false);
-          return;
-             }
+      const token =
+        localStorage.getItem(
+          "accessToken"
+        );
 
-      const xhr = new XMLHttpRequest();
+      if (!token) {
+        setError(
+          "Please login again."
+        );
 
-      xhr.open("POST", `${process.env.NEXT_PUBLIC_API_URL}/upload`);
+        setIsUploading(false);
+
+        return;
+      }
+
+      const xhr =
+        new XMLHttpRequest();
+
+      xhr.open(
+        "POST",
+        `${process.env.NEXT_PUBLIC_API_URL}/upload`
+      );
+
       xhr.setRequestHeader(
-          "Authorization",
-          `Bearer ${token}`
-          );
+        "Authorization",
+        `Bearer ${token}`
+      );
+
       xhr.withCredentials = true;
 
-      xhr.upload.onprogress = (event) => {
+      xhr.upload.onprogress = (
+        event
+      ) => {
         if (event.lengthComputable) {
-          const progress = Math.round((event.loaded / event.total) * 100);
+          const progress =
+            Math.round(
+              (event.loaded /
+                event.total) *
+                100
+            );
 
-          setUploadProgress(progress);
+          setUploadProgress(
+            progress
+          );
         }
       };
 
       xhr.onload = () => {
         setIsUploading(false);
 
-        if (xhr.status >= 200 && xhr.status < 300) {
-          setSuccess("File uploaded successfully!");
+        if (
+          xhr.status >= 200 &&
+          xhr.status < 300
+        ) {
+          setSuccess(
+            "File uploaded successfully!"
+          );
+
           setSelectedFile(null);
+
           setUploadProgress(100);
         } else {
-          let message = "File upload failed.";
+          let message =
+            "File upload failed.";
 
           try {
-            const response = JSON.parse(xhr.responseText);
+            const response =
+              JSON.parse(
+                xhr.responseText
+              );
 
-            message = response.message || response.error || message;
+            message =
+              response.message ||
+              response.error ||
+              message;
           } catch {
-           
+            // Ignore invalid JSON response
           }
 
           setError(message);
@@ -144,31 +177,44 @@ export default function FileUpload({ currentFolderId }) {
 
       xhr.onerror = () => {
         setIsUploading(false);
-        setError("Network error. Please try again.");
+
+        setError(
+          "Network error. Please try again."
+        );
       };
 
       xhr.send(formData);
     } catch (error) {
-      console.error("Upload error:", error);
+      console.error(
+        "Upload error:",
+        error
+      );
 
       setIsUploading(false);
-      setError("Something went wrong during upload.");
+
+      setError(
+        "Something went wrong during upload."
+      );
     }
   };
 
   return (
     <div className="w-full">
+
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
+        onClick={() =>
+          inputRef.current?.click()
+        }
         className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition ${
           isDragging
             ? "border-blue-500 bg-blue-50"
             : "border-gray-300 hover:border-blue-400"
         }`}
       >
+
         <input
           ref={inputRef}
           type="file"
@@ -178,8 +224,11 @@ export default function FileUpload({ currentFolderId }) {
         />
 
         <div className="space-y-2">
+
           <p className="text-lg font-semibold text-gray-700">
-            {isDragging ? "Drop your file here" : "Upload a file"}
+            {isDragging
+              ? "Drop your file here"
+              : "Upload a file"}
           </p>
 
           <p className="text-sm text-gray-500">
@@ -189,29 +238,44 @@ export default function FileUpload({ currentFolderId }) {
           <p className="text-xs text-gray-400">
             JPG, PNG, WEBP, PDF, TXT • Max 10 MB
           </p>
+
         </div>
+
       </div>
 
       {error && (
-        <p className="mt-3 text-sm font-medium text-red-500">{error}</p>
+        <p className="mt-3 text-sm font-medium text-red-500">
+          {error}
+        </p>
       )}
 
       {success && (
-        <p className="mt-3 text-sm font-medium text-green-600">{success}</p>
+        <p className="mt-3 text-sm font-medium text-green-600">
+          {success}
+        </p>
       )}
 
       {selectedFile && (
         <div className="mt-4 rounded-lg border bg-gray-50 p-4">
-          <p className="font-medium text-gray-700">{selectedFile.name}</p>
+
+          <p className="font-medium text-gray-700">
+            {selectedFile.name}
+          </p>
 
           <p className="mt-1 text-sm text-gray-500">
-            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+            {(
+              selectedFile.size /
+              1024 /
+              1024
+            ).toFixed(2)} MB
           </p>
 
           {!isUploading && (
             <button
+              type="button"
               onClick={(event) => {
                 event.stopPropagation();
+
                 handleUpload();
               }}
               className="mt-3 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -222,23 +286,36 @@ export default function FileUpload({ currentFolderId }) {
 
           {isUploading && (
             <div className="mt-4">
+
               <div className="mb-1 flex justify-between text-sm">
-                <span>Uploading...</span>
-                <span>{uploadProgress}%</span>
+
+                <span>
+                  Uploading...
+                </span>
+
+                <span>
+                  {uploadProgress}%
+                </span>
+
               </div>
 
               <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+
                 <div
                   className="h-full rounded-full bg-blue-600 transition-all"
                   style={{
                     width: `${uploadProgress}%`,
                   }}
                 />
+
               </div>
+
             </div>
           )}
+
         </div>
       )}
+
     </div>
   );
 }

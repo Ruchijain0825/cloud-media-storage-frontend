@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import toast from "react-hot-toast"
+import toast from "react-hot-toast";
+import { folderSchema } from "@/lib/validation/folder.schema";
 
 const createFolder = async (name, parentId) => {
   const token = localStorage.getItem("accessToken");
@@ -35,8 +36,16 @@ export default function CreateFolderModal({ parentId, onClose }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (!folderName.trim()) {
-      toast.error("Folder name is required");
+    const validation = folderSchema.safeParse({
+      name: folderName,
+    });
+
+    if (!validation.success) {
+      const message = validation.error.issues[0].message;
+
+      setError(message);
+      toast.error(message);
+
       return;
     }
 
@@ -44,13 +53,19 @@ export default function CreateFolderModal({ parentId, onClose }) {
       setLoading(true);
       setError("");
 
-      await createFolder(folderName.trim(), parentId);
+      await createFolder(
+        validation.data.name,
+        parentId
+      );
+
+      toast.success("Folder created successfully");
 
       setFolderName("");
 
       onClose();
     } catch (error) {
       setError(error.message);
+      toast.error(error.message);
     } finally {
       setLoading(false);
     }
@@ -87,12 +102,19 @@ export default function CreateFolderModal({ parentId, onClose }) {
           <input
             type="text"
             value={folderName}
-            onChange={(event) => setFolderName(event.target.value)}
+            onChange={(event) => {
+              setFolderName(event.target.value);
+              setError("");
+            }}
             placeholder="Enter folder name"
             className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
           />
 
-          {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
+          {error && (
+            <p className="text-sm text-red-500 mt-2">
+              {error}
+            </p>
+          )}
 
           <div className="flex justify-end gap-3 mt-6">
             <button
