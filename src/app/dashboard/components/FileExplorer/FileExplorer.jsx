@@ -14,7 +14,13 @@ import {
 } from "./apis/folder.api";
 
 import { toggleStar } from "./apis/star.api";
-import { createFileShare, createPublicLink } from "./apis/share.api";
+
+import {
+  createFileShare,
+  createPublicLink,
+} from "./apis/share.api";
+
+import { fetchSearchResults } from "./apis/search.api";
 
 import Breadcrumb from "./components/Breadcrumb";
 import FolderGridCard from "./components/FolderGridCard";
@@ -56,24 +62,61 @@ export default function FileExplorer({
   const [moveError, setMoveError] = useState("");
 
   const [openMenuId, setOpenMenuId] = useState(null);
+
   const [starredItems, setStarredItems] = useState({});
   const [starLoadingId, setStarLoadingId] = useState(null);
 
+  const [searchPage, setSearchPage] = useState(1);
+
   const inputRef = useRef(null);
+
+  const query = searchQuery.trim().toLowerCase();
+  const isSearching = query.length > 0;
+
+  // =========================================================
+  // ROOT FOLDERS
+  // =========================================================
 
   const rootQuery = useQuery({
     queryKey: ["root-folders"],
     queryFn: fetchRootFolders,
-    enabled: currentFolderId == null,
+    enabled: currentFolderId == null && !isSearching,
     staleTime: 30 * 1000,
   });
+
+  // =========================================================
+  // FOLDER CHILDREN
+  // =========================================================
 
   const childrenQuery = useQuery({
     queryKey: ["folder-children", currentFolderId],
     queryFn: () => fetchFolderChildren(currentFolderId),
-    enabled: currentFolderId != null,
+    enabled: currentFolderId != null && !isSearching,
     staleTime: 30 * 1000,
   });
+
+  // =========================================================
+  // SEARCH
+  // =========================================================
+
+  const searchQueryResult = useQuery({
+    queryKey: ["search", query, searchPage],
+    queryFn: () => fetchSearchResults(query, searchPage, 10),
+    enabled: isSearching,
+    staleTime: 30 * 1000,
+  });
+
+  // =========================================================
+  // RESET SEARCH PAGE
+  // =========================================================
+
+  useEffect(() => {
+    setSearchPage(1);
+  }, [searchQuery]);
+
+  // =========================================================
+  // FOCUS RENAME INPUT
+  // =========================================================
 
   useEffect(() => {
     if (editingFolderId !== null) {
@@ -82,65 +125,131 @@ export default function FileExplorer({
     }
   }, [editingFolderId]);
 
-  if (rootQuery.isLoading || childrenQuery.isLoading) {
+  // =========================================================
+  // LOADING
+  // =========================================================
+
+  if (
+    rootQuery.isLoading ||
+    childrenQuery.isLoading ||
+    searchQueryResult.isLoading
+  ) {
     return (
-      <div className="bg-white border rounded-xl min-h-[300px] flex items-center justify-center">
+      <div className="bg-white rounded-2xl min-h-[300px] flex items-center justify-center">
         <p className="text-gray-500">Loading files...</p>
       </div>
     );
   }
 
-  if (rootQuery.isError || childrenQuery.isError) {
-    const error = rootQuery.error || childrenQuery.error;
+  // =========================================================
+  // ERROR
+  // =========================================================
+
+  if (
+    rootQuery.isError ||
+    childrenQuery.isError ||
+    searchQueryResult.isError
+  ) {
+    const error =
+      rootQuery.error ||
+      childrenQuery.error ||
+      searchQueryResult.error;
+
     return (
-      <div className="bg-white border rounded-xl min-h-[300px] flex items-center justify-center">
-        <p className="text-red-500">{error?.message || "Something went wrong"}</p>
+      <div className="bg-white rounded-2xl min-h-[300px] flex items-center justify-center">
+        <p className="text-red-500">
+          {error?.message || "Something went wrong"}
+        </p>
       </div>
     );
   }
 
-  const folders =
-    currentFolderId == null
+  // =========================================================
+  // DATA
+  // =========================================================
+
+  const folders = isSearching
+    ? (searchQueryResult.data?.data ?? []).filter(
+        (item) => item.resource_type === "folder"
+      )
+    : currentFolderId == null
       ? rootQuery.data?.folders ?? []
       : childrenQuery.data?.children?.folders ?? [];
 
-  const files =
-    currentFolderId == null
+  const files = isSearching
+    ? (searchQueryResult.data?.data ?? []).filter(
+        (item) => item.resource_type === "file"
+      )
+    : currentFolderId == null
       ? rootQuery.data?.files ?? []
       : childrenQuery.data?.children?.files ?? [];
 
-  const query = searchQuery.trim().toLowerCase();
+  // =========================================================
+  // SORT FOLDERS
+  // =========================================================
 
-  const filteredFolders = folders.filter((folder) =>
-    folder.name.toLowerCase().includes(query)
-  );
-
-  const filteredFiles = files.filter((file) =>
-    file.name.toLowerCase().includes(query)
-  );
-
-  const sortedFolders = [...filteredFolders].sort((a, b) => {
-    if (sortBy === "name") return a.name.localeCompare(b.name);
-    if (sortBy === "date") {
-      return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+  const sortedFolders = [...folders].sort((a, b) => {
+    if (sortBy === "name") {
+      return a.name.localeCompare(b.name);
     }
+
+    if (sortBy === "date") {
+      return (
+        new Date(b.updated_at || 0) -
+        new Date(a.updated_at || 0)
+      );
+    }
+
     return 0;
   });
 
-  const sortedFiles = [...filteredFiles].sort((a, b) => {
-    if (sortBy === "name") return a.name.localeCompare(b.name);
-    if (sortBy === "size") return (b.size || 0) - (a.size || 0);
-    if (sortBy === "date") {
-      return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+  // =========================================================
+  // SORT FILES
+  // =========================================================
+
+  const sortedFiles = [...files].sort((a, b) => {
+    if (sortBy === "name") {
+      return a.name.localeCompare(b.name);
     }
+
+    if (sortBy === "size") {
+      const sizeA = a.size || a.size_bytes || 0;
+      const sizeB = b.size || b.size_bytes || 0;
+
+      return sizeB - sizeA;
+    }
+
+    if (sortBy === "date") {
+      return (
+        new Date(b.updated_at || 0) -
+        new Date(a.updated_at || 0)
+      );
+    }
+
     return 0;
   });
+
+  // =========================================================
+  // OPEN FOLDER
+  // =========================================================
 
   const handleOpenFolder = (folder) => {
     setCurrentFolderId(folder.id);
-    setFolderPath((previous) => [...previous, { id: folder.id, name: folder.name }]);
+
+    setFolderPath((previous) => [
+      ...previous,
+      {
+        id: folder.id,
+        name: folder.name,
+      },
+    ]);
+
     setOpenMenuId(null);
   };
+
+  // =========================================================
+  // GO TO ROOT
+  // =========================================================
 
   const handleGoToRoot = () => {
     setCurrentFolderId(null);
@@ -148,11 +257,19 @@ export default function FileExplorer({
     setOpenMenuId(null);
   };
 
+  // =========================================================
+  // BREADCRUMB
+  // =========================================================
+
   const handleBreadcrumbClick = (folder, index) => {
     setCurrentFolderId(folder.id);
     setFolderPath(folderPath.slice(0, index + 1));
     setOpenMenuId(null);
   };
+
+  // =========================================================
+  // RENAME
+  // =========================================================
 
   const handleEditFolder = (folder) => {
     setEditingFolderId(folder.id);
@@ -166,7 +283,9 @@ export default function FileExplorer({
   };
 
   const handleUpdateFolder = async (folderId) => {
-    const validation = folderSchema.safeParse({ name: editingFolderName });
+    const validation = folderSchema.safeParse({
+      name: editingFolderName,
+    });
 
     if (!validation.success) {
       alert(validation.error.issues[0].message);
@@ -175,38 +294,70 @@ export default function FileExplorer({
 
     const name = validation.data.name;
 
-    const previousRootData = queryClient.getQueryData(["root-folders"]);
-    const previousChildrenData = queryClient.getQueryData([
-      "folder-children",
-      currentFolderId,
-    ]);
+    const previousRootData =
+      queryClient.getQueryData(["root-folders"]);
 
-    queryClient.setQueryData(["root-folders"], (oldData) => {
-      if (!oldData) return oldData;
-      return {
-        ...oldData,
-        folders: oldData.folders?.map((folder) =>
-          folder.id === folderId ? { ...folder, name } : folder
-        ),
-      };
-    });
+    const previousChildrenData =
+      queryClient.getQueryData([
+        "folder-children",
+        currentFolderId,
+      ]);
 
-    queryClient.setQueryData(["folder-children", currentFolderId], (oldData) => {
-      if (!oldData?.children) return oldData;
-      return {
-        ...oldData,
-        children: {
-          ...oldData.children,
-          folders: oldData.children.folders?.map((folder) =>
-            folder.id === folderId ? { ...folder, name } : folder
+    // OPTIMISTIC ROOT UPDATE
+
+    queryClient.setQueryData(
+      ["root-folders"],
+      (oldData) => {
+        if (!oldData) return oldData;
+
+        return {
+          ...oldData,
+          folders: oldData.folders?.map((folder) =>
+            folder.id === folderId
+              ? {
+                  ...folder,
+                  name,
+                }
+              : folder
           ),
-        },
-      };
-    });
+        };
+      }
+    );
+
+    // OPTIMISTIC CHILD UPDATE
+
+    queryClient.setQueryData(
+      ["folder-children", currentFolderId],
+      (oldData) => {
+        if (!oldData?.children) return oldData;
+
+        return {
+          ...oldData,
+          children: {
+            ...oldData.children,
+            folders:
+              oldData.children.folders?.map(
+                (folder) =>
+                  folder.id === folderId
+                    ? {
+                        ...folder,
+                        name,
+                      }
+                    : folder
+              ),
+          },
+        };
+      }
+    );
 
     setFolderPath((previous) =>
       previous.map((folder) =>
-        folder.id === folderId ? { ...folder, name } : folder
+        folder.id === folderId
+          ? {
+              ...folder,
+              name,
+            }
+          : folder
       )
     );
 
@@ -215,35 +366,40 @@ export default function FileExplorer({
 
     try {
       await updateFolder(folderId, name);
-    } catch (error) {
-      console.error("Rename folder error:", error);
 
-      queryClient.setQueryData(["root-folders"], previousRootData);
+      await queryClient.invalidateQueries({
+        queryKey: ["search"],
+      });
+    } catch (error) {
+      console.error(
+        "Rename folder error:",
+        error
+      );
+
+      queryClient.setQueryData(
+        ["root-folders"],
+        previousRootData
+      );
+
       queryClient.setQueryData(
         ["folder-children", currentFolderId],
         previousChildrenData
       );
 
-      setFolderPath((previous) =>
-        previous.map((folder) => {
-          const oldRootFolder = previousRootData?.folders?.find(
-            (item) => item.id === folder.id
-          );
-          const oldChildFolder = previousChildrenData?.children?.folders?.find(
-            (item) => item.id === folder.id
-          );
-          const oldFolder = oldRootFolder || oldChildFolder;
-          return oldFolder ? { ...folder, name: oldFolder.name } : folder;
-        })
+      alert(
+        error.message ||
+          "Failed to update folder"
       );
-
-      alert(error.message || "Failed to update folder");
     }
   };
 
-  const handleFolderKeyDown = async (event, folderId) => {
+  const handleFolderKeyDown = async (
+    event,
+    folderId
+  ) => {
     if (event.key === "Enter") {
       event.preventDefault();
+
       await handleUpdateFolder(folderId);
     }
 
@@ -251,6 +407,10 @@ export default function FileExplorer({
       cancelRename();
     }
   };
+
+  // =========================================================
+  // MOVE
+  // =========================================================
 
   const openMoveModal = async (folder) => {
     setMovingFolder(folder);
@@ -261,36 +421,67 @@ export default function FileExplorer({
     setIsMoveLoading(true);
 
     try {
-      const folders = await fetchMoveFolders(null);
-      setMoveFolders(folders.filter((item) => item.id !== folder.id));
+      const folders =
+        await fetchMoveFolders(null);
+
+      setMoveFolders(
+        folders.filter(
+          (item) => item.id !== folder.id
+        )
+      );
     } catch (error) {
-      console.error("Load move folders error:", error);
+      console.error(
+        "Load move folders error:",
+        error
+      );
+
       setMoveError(error.message);
     } finally {
       setIsMoveLoading(false);
     }
   };
 
-  const handleMoveDestination = async (folder) => {
-    if (!movingFolder || folder.id === movingFolder.id) return;
+  const handleMoveDestination = async (
+    folder
+  ) => {
+    if (
+      !movingFolder ||
+      folder.id === movingFolder.id
+    ) {
+      return;
+    }
 
     setIsMoveLoading(true);
     setMoveError("");
 
     try {
-      const children = await fetchMoveFolders(folder.id);
+      const children =
+        await fetchMoveFolders(folder.id);
 
       setMoveFolders(
-        children.filter((item) => item.id !== movingFolder.id)
+        children.filter(
+          (item) =>
+            item.id !== movingFolder.id
+        )
       );
 
       setMoveDestinationId(folder.id);
-      setMoveDestinationPath((previous) => [
-        ...previous,
-        { id: folder.id, name: folder.name },
-      ]);
+
+      setMoveDestinationPath(
+        (previous) => [
+          ...previous,
+          {
+            id: folder.id,
+            name: folder.name,
+          },
+        ]
+      );
     } catch (error) {
-      console.error("Load destination folders error:", error);
+      console.error(
+        "Load destination folders error:",
+        error
+      );
+
       setMoveError(error.message);
     } finally {
       setIsMoveLoading(false);
@@ -304,8 +495,15 @@ export default function FileExplorer({
     setIsMoveLoading(true);
 
     try {
-      const folders = await fetchMoveFolders(null);
-      setMoveFolders(folders.filter((item) => item.id !== movingFolder?.id));
+      const folders =
+        await fetchMoveFolders(null);
+
+      setMoveFolders(
+        folders.filter(
+          (item) =>
+            item.id !== movingFolder?.id
+        )
+      );
     } catch (error) {
       setMoveError(error.message);
     } finally {
@@ -314,37 +512,65 @@ export default function FileExplorer({
   };
 
   const handleMoveBack = async () => {
-    if (moveDestinationPath.length === 0) return;
+    if (moveDestinationPath.length === 0) {
+      return;
+    }
 
-    const previousPath = [...moveDestinationPath];
+    const previousPath = [
+      ...moveDestinationPath,
+    ];
+
     previousPath.pop();
 
     const parentId =
       previousPath.length > 0
-        ? previousPath[previousPath.length - 1].id
+        ? previousPath[
+            previousPath.length - 1
+          ].id
         : null;
 
-    setMoveDestinationPath(previousPath);
+    setMoveDestinationPath(
+      previousPath
+    );
+
     setMoveDestinationId(parentId);
     setMoveError("");
     setIsMoveLoading(true);
 
     try {
-      const folders = await fetchMoveFolders(parentId);
+      const folders =
+        await fetchMoveFolders(parentId);
+
       setMoveFolders(
-        folders.filter((item) => item.id !== movingFolder?.id)
+        folders.filter(
+          (item) =>
+            item.id !==
+            movingFolder?.id
+        )
       );
     } catch (error) {
-      console.error("Load move folders error:", error);
+      console.error(
+        "Load move folders error:",
+        error
+      );
+
       setMoveError(error.message);
     } finally {
       setIsMoveLoading(false);
     }
   };
 
-  const handleMovePathClick = async (index) => {
-    const newPath = moveDestinationPath.slice(0, index + 1);
-    const parentId = newPath[newPath.length - 1].id;
+  const handleMovePathClick = async (
+    index
+  ) => {
+    const newPath =
+      moveDestinationPath.slice(
+        0,
+        index + 1
+      );
+
+    const parentId =
+      newPath[newPath.length - 1].id;
 
     setMoveDestinationPath(newPath);
     setMoveDestinationId(parentId);
@@ -352,11 +578,22 @@ export default function FileExplorer({
     setIsMoveLoading(true);
 
     try {
-      const folders = await fetchMoveFolders(parentId);
+      const folders =
+        await fetchMoveFolders(parentId);
+
       setMoveFolders(
-        folders.filter((item) => item.id !== movingFolder?.id)
+        folders.filter(
+          (item) =>
+            item.id !==
+            movingFolder?.id
+        )
       );
     } catch (error) {
+      console.error(
+        "Load move folders error:",
+        error
+      );
+
       setMoveError(error.message);
     } finally {
       setIsMoveLoading(false);
@@ -375,133 +612,272 @@ export default function FileExplorer({
   };
 
   const handleMoveFolder = async () => {
-    if (!movingFolder || !moveDestinationId || isMoving) return;
+    if (
+      !movingFolder ||
+      !moveDestinationId ||
+      isMoving
+    ) {
+      return;
+    }
 
-    const sourceFolderId = movingFolder.id;
-    const destinationId = moveDestinationId;
+    const sourceFolderId =
+      movingFolder.id;
 
-    const previousRootData = queryClient.getQueryData(["root-folders"]);
-    const previousCurrentChildrenData = queryClient.getQueryData([
-      "folder-children",
-      currentFolderId,
-    ]);
-    const previousDestinationData = queryClient.getQueryData([
-      "folder-children",
-      destinationId,
-    ]);
+    const destinationId =
+      moveDestinationId;
 
-    queryClient.setQueryData(["root-folders"], (oldData) => {
-      if (!oldData) return oldData;
-      return {
-        ...oldData,
-        folders: oldData.folders?.filter(
-          (folder) => folder.id !== sourceFolderId
-        ),
-      };
-    });
+    const previousRootData =
+      queryClient.getQueryData([
+        "root-folders",
+      ]);
 
-    queryClient.setQueryData(["folder-children", currentFolderId], (oldData) => {
-      if (!oldData?.children) return oldData;
-      return {
-        ...oldData,
-        children: {
-          ...oldData.children,
-          folders: oldData.children.folders?.filter(
-            (folder) => folder.id !== sourceFolderId
-          ),
-        },
-      };
-    });
+    const previousCurrentChildrenData =
+      queryClient.getQueryData([
+        "folder-children",
+        currentFolderId,
+      ]);
 
-    queryClient.setQueryData(["folder-children", destinationId], (oldData) => {
-      if (!oldData?.children) return oldData;
+    const previousDestinationData =
+      queryClient.getQueryData([
+        "folder-children",
+        destinationId,
+      ]);
 
-      const alreadyExists = oldData.children.folders?.some(
-        (folder) => folder.id === sourceFolderId
-      );
+    // OPTIMISTIC ROOT
 
-      if (alreadyExists) return oldData;
+    queryClient.setQueryData(
+      ["root-folders"],
+      (oldData) => {
+        if (!oldData) return oldData;
 
-      return {
-        ...oldData,
-        children: {
-          ...oldData.children,
-          folders: [
-            ...(oldData.children.folders ?? []),
-            { ...movingFolder, parent_id: destinationId },
-          ],
-        },
-      };
-    });
+        return {
+          ...oldData,
+          folders:
+            oldData.folders?.filter(
+              (folder) =>
+                folder.id !==
+                sourceFolderId
+            ),
+        };
+      }
+    );
+
+    // OPTIMISTIC CURRENT FOLDER
+
+    queryClient.setQueryData(
+      [
+        "folder-children",
+        currentFolderId,
+      ],
+      (oldData) => {
+        if (!oldData?.children) {
+          return oldData;
+        }
+
+        return {
+          ...oldData,
+          children: {
+            ...oldData.children,
+            folders:
+              oldData.children.folders?.filter(
+                (folder) =>
+                  folder.id !==
+                  sourceFolderId
+              ),
+          },
+        };
+      }
+    );
+
+    // OPTIMISTIC DESTINATION
+
+    queryClient.setQueryData(
+      [
+        "folder-children",
+        destinationId,
+      ],
+      (oldData) => {
+        if (!oldData?.children) {
+          return oldData;
+        }
+
+        const alreadyExists =
+          oldData.children.folders?.some(
+            (folder) =>
+              folder.id ===
+              sourceFolderId
+          );
+
+        if (alreadyExists) {
+          return oldData;
+        }
+
+        return {
+          ...oldData,
+          children: {
+            ...oldData.children,
+            folders: [
+              ...(oldData.children.folders ??
+                []),
+              {
+                ...movingFolder,
+                parent_id:
+                  destinationId,
+              },
+            ],
+          },
+        };
+      }
+    );
 
     setIsMoving(true);
     setMoveError("");
 
     try {
-      await moveFolder(sourceFolderId, destinationId);
+      await moveFolder(
+        sourceFolderId,
+        destinationId
+      );
+
+      await queryClient.invalidateQueries({
+        queryKey: ["search"],
+      });
+
       closeMoveModal();
     } catch (error) {
-      console.error("Move folder error:", error);
+      console.error(
+        "Move folder error:",
+        error
+      );
 
-      queryClient.setQueryData(["root-folders"], previousRootData);
       queryClient.setQueryData(
-        ["folder-children", currentFolderId],
+        ["root-folders"],
+        previousRootData
+      );
+
+      queryClient.setQueryData(
+        [
+          "folder-children",
+          currentFolderId,
+        ],
         previousCurrentChildrenData
       );
+
       queryClient.setQueryData(
-        ["folder-children", destinationId],
+        [
+          "folder-children",
+          destinationId,
+        ],
         previousDestinationData
       );
 
-      setMoveError(error.message || "Failed to move folder");
+      setMoveError(
+        error.message ||
+          "Failed to move folder"
+      );
     } finally {
       setIsMoving(false);
     }
   };
 
-  const handleDeleteFolder = async (folderId) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this folder?"
-    );
+  // =========================================================
+  // DELETE
+  // =========================================================
 
-    if (!confirmed) return;
+  const handleDeleteFolder = async (
+    folderId
+  ) => {
+    const confirmed =
+      window.confirm(
+        "Are you sure you want to delete this folder?"
+      );
+
+    if (!confirmed) {
+      return;
+    }
 
     try {
       await deleteFolder(folderId);
 
-      await queryClient.invalidateQueries({ queryKey: ["root-folders"] });
       await queryClient.invalidateQueries({
-        queryKey: ["folder-children", currentFolderId],
+        queryKey: ["root-folders"],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "folder-children",
+          currentFolderId,
+        ],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["search"],
       });
 
       setOpenMenuId(null);
     } catch (error) {
-      console.error("Delete folder error:", error);
-      alert(error.message);
+      console.error(
+        "Delete folder error:",
+        error
+      );
+
+      alert(
+        error.message ||
+          "Failed to delete folder"
+      );
     }
   };
 
-  const handleToggleStar = async (resourceType, resourceId) => {
+  // =========================================================
+  // STAR / UNSTAR
+  // =========================================================
+
+  const handleToggleStar = async (
+    resourceType,
+    resourceId
+  ) => {
     const key = `${resourceType}-${resourceId}`;
 
     try {
       setStarLoadingId(key);
 
-      const isStarred = Boolean(starredItems[key]);
+      const isStarred =
+        Boolean(starredItems[key]);
 
-      await toggleStar(resourceType, resourceId, isStarred);
+      await toggleStar(
+        resourceType,
+        resourceId,
+        isStarred
+      );
 
-      setStarredItems((previous) => ({
-        ...previous,
-        [key]: !isStarred,
-      }));
+      setStarredItems(
+        (previous) => ({
+          ...previous,
+          [key]: !isStarred,
+        })
+      );
+
+      await queryClient.invalidateQueries({
+        queryKey: ["starred-items"],
+      });
     } catch (error) {
-      console.error("Star error:", error);
-      alert(error.message);
+      console.error(
+        "Star error:",
+        error
+      );
+
+      alert(
+        error.message ||
+          "Failed to update star"
+      );
     } finally {
       setStarLoadingId(null);
     }
   };
+
+  // =========================================================
+  // SHARE
+  // =========================================================
 
   const openShareModal = (file) => {
     setShareFile(file);
@@ -524,118 +900,267 @@ export default function FileExplorer({
     const email = shareEmail.trim();
 
     if (!email) {
-      setShareError("Email address is required");
+      setShareError(
+        "Email address is required"
+      );
       return;
     }
 
-    if (!shareFile) return;
+    if (!shareFile) {
+      return;
+    }
 
     try {
       setIsSharing(true);
       setShareError("");
 
-      await createFileShare({
+      const data = await createFileShare({
         resourceId: shareFile.id,
         email,
         role: shareRole,
       });
 
-      alert("File shared successfully!");
+      alert(
+        data?.message ||
+          "File shared successfully!"
+      );
 
       closeShareModal();
     } catch (error) {
-      console.error("Share file error:", error);
-      setShareError(error.message);
+      console.error(
+        "Share file error:",
+        error
+      );
+
+      setShareError(
+        error.message ||
+          "Failed to share file"
+      );
     } finally {
       setIsSharing(false);
     }
   };
 
+  // =========================================================
+  // PUBLIC LINK
+  // =========================================================
+
   const handleGenerateLink = async () => {
-    if (!shareFile) return;
+    if (!shareFile) {
+      return;
+    }
 
     try {
       setShareError("");
 
-      const data = await createPublicLink(shareFile.id);
-      const link = `${window.location.origin}/share/${data.linkShare.token}`;
+      const data =
+        await createPublicLink(
+          shareFile.id
+        );
+
+      const link =
+        `${window.location.origin}/share/${data.linkShare.token}`;
 
       setPublicLink(link);
     } catch (error) {
-      console.error("Generate link error:", error);
-      setShareError(error.message);
+      console.error(
+        "Generate link error:",
+        error
+      );
+
+      setShareError(
+        error.message ||
+          "Failed to generate link"
+      );
     }
   };
 
+  // =========================================================
+  // UI
+  // =========================================================
+
   return (
     <>
-      <div className="bg-white border rounded-xl overflow-visible">
-        <Breadcrumb
-          currentFolderId={currentFolderId}
-          folderPath={folderPath}
-          onRoot={handleGoToRoot}
-          onBreadcrumb={handleBreadcrumbClick}
-        />
+      <div className="bg-white rounded-2xl overflow-visible">
 
-        {sortedFolders.length > 0 || sortedFiles.length > 0 ? (
+        {/* ===================================================
+            BREADCRUMB
+        =================================================== */}
+
+        {!isSearching && (
+          <Breadcrumb
+            currentFolderId={
+              currentFolderId
+            }
+            folderPath={folderPath}
+            onRoot={handleGoToRoot}
+            onBreadcrumb={
+              handleBreadcrumbClick
+            }
+          />
+        )}
+
+        {/* ===================================================
+            SEARCH RESULT LABEL
+        =================================================== */}
+
+        {isSearching && (
+          <div className="px-6 py-4 border-b border-slate-100">
+            <p className="text-sm text-slate-500">
+              Search results for{" "}
+              <span className="font-medium text-slate-800">
+                "{searchQuery.trim()}"
+              </span>
+            </p>
+          </div>
+        )}
+
+        {/* ===================================================
+            DATA
+        =================================================== */}
+
+        {sortedFolders.length > 0 ||
+        sortedFiles.length > 0 ? (
           viewMode === "grid" ? (
+
+            /* =================================================
+               GRID VIEW
+            ================================================= */
+
             <div className="p-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {sortedFolders.map((folder) => {
-                  const starKey = `folder-${folder.id}`;
-                  const menuId = `grid-folder-menu-${folder.id}`;
 
-                  return (
-                    <FolderGridCard
-                      key={folder.id}
-                      folder={folder}
-                      isEditing={editingFolderId === folder.id}
-                      editingFolderName={editingFolderName}
-                      inputRef={inputRef}
-                      onEditingNameChange={setEditingFolderName}
-                      onKeyDown={handleFolderKeyDown}
-                      onOpen={handleOpenFolder}
-                      onStar={handleToggleStar}
-                      isStarred={Boolean(starredItems[starKey])}
-                      starLoading={starLoadingId === starKey}
-                      menuId={menuId}
-                      openMenuId={openMenuId}
-                      setOpenMenuId={setOpenMenuId}
-                      onRename={handleEditFolder}
-                      onMove={openMoveModal}
-                      onDelete={handleDeleteFolder}
-                    />
-                  );
-                })}
+                {sortedFolders.map(
+                  (folder) => {
+                    const starKey =
+                      `folder-${folder.id}`;
 
-                {sortedFiles.map((file) => {
-                  const starKey = `file-${file.id}`;
-                  const menuId = `grid-file-menu-${file.id}`;
+                    const menuId =
+                      `grid-folder-menu-${folder.id}`;
 
-                  return (
-                    <FileGridCard
-                      key={file.id}
-                      file={file}
-                      onPreview={(item) => {
-                        setSelectedFile(item);
-                        setOpenMenuId(null);
-                      }}
-                      onShare={openShareModal}
-                      onStar={handleToggleStar}
-                      isStarred={Boolean(starredItems[starKey])}
-                      starLoading={starLoadingId === starKey}
-                      menuId={menuId}
-                      openMenuId={openMenuId}
-                      setOpenMenuId={setOpenMenuId}
-                    />
-                  );
-                })}
+                    return (
+                      <FolderGridCard
+                        key={folder.id}
+                        folder={folder}
+                        isEditing={
+                          editingFolderId ===
+                          folder.id
+                        }
+                        editingFolderName={
+                          editingFolderName
+                        }
+                        inputRef={
+                          inputRef
+                        }
+                        onEditingNameChange={
+                          setEditingFolderName
+                        }
+                        onKeyDown={
+                          handleFolderKeyDown
+                        }
+                        onOpen={
+                          handleOpenFolder
+                        }
+                        onStar={
+                          handleToggleStar
+                        }
+                        isStarred={Boolean(
+                          starredItems[
+                            starKey
+                          ]
+                        )}
+                        starLoading={
+                          starLoadingId ===
+                          starKey
+                        }
+                        menuId={
+                          menuId
+                        }
+                        openMenuId={
+                          openMenuId
+                        }
+                        setOpenMenuId={
+                          setOpenMenuId
+                        }
+                        onRename={
+                          handleEditFolder
+                        }
+                        onMove={
+                          openMoveModal
+                        }
+                        onDelete={
+                          handleDeleteFolder
+                        }
+                      />
+                    );
+                  }
+                )}
+
+                {sortedFiles.map(
+                  (file) => {
+                    const starKey =
+                      `file-${file.id}`;
+
+                    const menuId =
+                      `grid-file-menu-${file.id}`;
+
+                    return (
+                      <FileGridCard
+                        key={file.id}
+                        file={file}
+                        onPreview={(
+                          item
+                        ) => {
+                          setSelectedFile(
+                            item
+                          );
+
+                          setOpenMenuId(
+                            null
+                          );
+                        }}
+                        onShare={
+                          openShareModal
+                        }
+                        onStar={
+                          handleToggleStar
+                        }
+                        isStarred={Boolean(
+                          starredItems[
+                            starKey
+                          ]
+                        )}
+                        starLoading={
+                          starLoadingId ===
+                          starKey
+                        }
+                        menuId={
+                          menuId
+                        }
+                        openMenuId={
+                          openMenuId
+                        }
+                        setOpenMenuId={
+                          setOpenMenuId
+                        }
+                      />
+                    );
+                  }
+                )}
+
               </div>
             </div>
+
           ) : (
+
+            /* =================================================
+               LIST VIEW
+            ================================================= */
+
             <div className="overflow-x-auto">
               <div className="min-w-[900px]">
-                <div className="grid grid-cols-[minmax(300px,1fr)_100px_160px_110px_100px] gap-4 items-center px-6 py-3 bg-gray-50 border-y text-xs font-medium text-gray-500">
+
+                <div className="grid grid-cols-[minmax(300px,1fr)_100px_160px_110px_100px] gap-4 items-center px-6 py-3 bg-slate-50 border-y border-slate-100 text-xs font-medium text-slate-500">
                   <div>Name</div>
                   <div>Owner</div>
                   <div>Last modified</div>
@@ -643,87 +1168,240 @@ export default function FileExplorer({
                   <div>Actions</div>
                 </div>
 
-                {sortedFolders.map((folder) => {
-                  const starKey = `folder-${folder.id}`;
-                  const menuId = `folder-menu-${folder.id}`;
+                {sortedFolders.map(
+                  (folder) => {
+                    const starKey =
+                      `folder-${folder.id}`;
 
-                  return (
-                    <FolderListRow
-                      key={folder.id}
-                      folder={folder}
-                      isEditing={editingFolderId === folder.id}
-                      editingFolderName={editingFolderName}
-                      inputRef={inputRef}
-                      onEditingNameChange={setEditingFolderName}
-                      onKeyDown={handleFolderKeyDown}
-                      onOpen={handleOpenFolder}
-                      onStar={handleToggleStar}
-                      isStarred={Boolean(starredItems[starKey])}
-                      starLoading={starLoadingId === starKey}
-                      menuId={menuId}
-                      openMenuId={openMenuId}
-                      setOpenMenuId={setOpenMenuId}
-                      onRename={handleEditFolder}
-                      onMove={openMoveModal}
-                      onDelete={handleDeleteFolder}
-                    />
-                  );
-                })}
+                    const menuId =
+                      `folder-menu-${folder.id}`;
 
-                {sortedFiles.map((file) => {
-                  const starKey = `file-${file.id}`;
-                  const menuId = `file-menu-${file.id}`;
+                    return (
+                      <FolderListRow
+                        key={folder.id}
+                        folder={folder}
+                        isEditing={
+                          editingFolderId ===
+                          folder.id
+                        }
+                        editingFolderName={
+                          editingFolderName
+                        }
+                        inputRef={
+                          inputRef
+                        }
+                        onEditingNameChange={
+                          setEditingFolderName
+                        }
+                        onKeyDown={
+                          handleFolderKeyDown
+                        }
+                        onOpen={
+                          handleOpenFolder
+                        }
+                        onStar={
+                          handleToggleStar
+                        }
+                        isStarred={Boolean(
+                          starredItems[
+                            starKey
+                          ]
+                        )}
+                        starLoading={
+                          starLoadingId ===
+                          starKey
+                        }
+                        menuId={
+                          menuId
+                        }
+                        openMenuId={
+                          openMenuId
+                        }
+                        setOpenMenuId={
+                          setOpenMenuId
+                        }
+                        onRename={
+                          handleEditFolder
+                        }
+                        onMove={
+                          openMoveModal
+                        }
+                        onDelete={
+                          handleDeleteFolder
+                        }
+                      />
+                    );
+                  }
+                )}
 
-                  return (
-                    <FileListRow
-                      key={file.id}
-                      file={file}
-                      onPreview={(item) => {
-                        setSelectedFile(item);
-                        setOpenMenuId(null);
-                      }}
-                      onShare={openShareModal}
-                      onStar={handleToggleStar}
-                      isStarred={Boolean(starredItems[starKey])}
-                      starLoading={starLoadingId === starKey}
-                      menuId={menuId}
-                      openMenuId={openMenuId}
-                      setOpenMenuId={setOpenMenuId}
-                    />
-                  );
-                })}
+                {sortedFiles.map(
+                  (file) => {
+                    const starKey =
+                      `file-${file.id}`;
+
+                    const menuId =
+                      `file-menu-${file.id}`;
+
+                    return (
+                      <FileListRow
+                        key={file.id}
+                        file={file}
+                        onPreview={(
+                          item
+                        ) => {
+                          setSelectedFile(
+                            item
+                          );
+
+                          setOpenMenuId(
+                            null
+                          );
+                        }}
+                        onShare={
+                          openShareModal
+                        }
+                        onStar={
+                          handleToggleStar
+                        }
+                        isStarred={Boolean(
+                          starredItems[
+                            starKey
+                          ]
+                        )}
+                        starLoading={
+                          starLoadingId ===
+                          starKey
+                        }
+                        menuId={
+                          menuId
+                        }
+                        openMenuId={
+                          openMenuId
+                        }
+                        setOpenMenuId={
+                          setOpenMenuId
+                        }
+                      />
+                    );
+                  }
+                )}
+
               </div>
             </div>
           )
         ) : (
+
+          /* =================================================
+             EMPTY STATE
+          ================================================= */
+
           <div className="py-20 text-center">
-            <div className="text-5xl mb-4">📁</div>
+            <div className="text-5xl mb-4">
+              📁
+            </div>
+
             <p className="text-gray-500">
-              {query ? "No matching files or folders." : "This folder is empty."}
+              {isSearching
+                ? "No matching files or folders."
+                : "This folder is empty."}
             </p>
           </div>
         )}
+
+        {/* ===================================================
+            SEARCH PAGINATION
+        =================================================== */}
+
+        {isSearching &&
+          searchQueryResult.data
+            ?.pagination && (
+            <div className="flex items-center justify-center gap-4 py-4 border-t border-slate-100">
+
+              <button
+                type="button"
+                onClick={() =>
+                  setSearchPage(
+                    (page) =>
+                      page - 1
+                  )
+                }
+                disabled={
+                  searchPage === 1
+                }
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              >
+                Previous
+              </button>
+
+              <span className="text-sm text-slate-600">
+                Page {searchPage}
+              </span>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setSearchPage(
+                    (page) =>
+                      page + 1
+                  )
+                }
+                disabled={
+                  !searchQueryResult
+                    .data
+                    .pagination
+                    .hasNextPage
+                }
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              >
+                Next
+              </button>
+
+            </div>
+          )}
+
       </div>
+
+      {/* =====================================================
+          MOVE MODAL
+      ===================================================== */}
 
       <MoveModal
         movingFolder={movingFolder}
-        moveDestinationPath={moveDestinationPath}
+        moveDestinationPath={
+          moveDestinationPath
+        }
         moveFolders={moveFolders}
         moveError={moveError}
-        isMoveLoading={isMoveLoading}
+        isMoveLoading={
+          isMoveLoading
+        }
         isMoving={isMoving}
         onClose={closeMoveModal}
         onRoot={handleMoveRoot}
-        onPathClick={handleMovePathClick}
+        onPathClick={
+          handleMovePathClick
+        }
         onBack={handleMoveBack}
-        onDestination={handleMoveDestination}
+        onDestination={
+          handleMoveDestination
+        }
         onMove={handleMoveFolder}
       />
 
+      {/* =====================================================
+          PREVIEW MODAL
+      ===================================================== */}
+
       <PreviewModal
         selectedFile={selectedFile}
-        onClose={() => setSelectedFile(null)}
+        onClose={() =>
+          setSelectedFile(null)
+        }
       />
+
+      {/* =====================================================
+          SHARE MODAL
+      ===================================================== */}
 
       <ShareModal
         shareFile={shareFile}
@@ -732,11 +1410,21 @@ export default function FileExplorer({
         shareError={shareError}
         publicLink={publicLink}
         isSharing={isSharing}
-        setShareEmail={setShareEmail}
-        setShareRole={setShareRole}
-        onClose={closeShareModal}
-        onShare={handleShareFile}
-        onGenerateLink={handleGenerateLink}
+        setShareEmail={
+          setShareEmail
+        }
+        setShareRole={
+          setShareRole
+        }
+        onClose={
+          closeShareModal
+        }
+        onShare={
+          handleShareFile
+        }
+        onGenerateLink={
+          handleGenerateLink
+        }
       />
     </>
   );
