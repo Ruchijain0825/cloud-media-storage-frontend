@@ -17,7 +17,7 @@ export default function PublicSharePage() {
         setError("");
 
       const response = await fetch(
-  `http://localhost:8080/api/public-shares/${token}`
+  `${process.env.NEXT_PUBLIC_API_URL}/api/public-shares/${token}`
 );
         const data = await response.json();
 

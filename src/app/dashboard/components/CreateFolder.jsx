@@ -7,7 +7,7 @@ import { folderSchema } from "@/lib/validation/folder.schema";
 const createFolder = async (name, parentId) => {
   const token = localStorage.getItem("accessToken");
 
-  const response = await fetch("http://localhost:8080/api/folder", {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/folder`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

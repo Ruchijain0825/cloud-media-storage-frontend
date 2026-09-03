@@ -1,4 +1,4 @@
-export const fetchSearchResults = async (query, page = 1, limit = 10) => {
+export const fetchRecentFiles = async () => {
   const token = localStorage.getItem("accessToken");
 
   if (!token) {
@@ -6,9 +6,7 @@ export const fetchSearchResults = async (query, page = 1, limit = 10) => {
   }
 
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL}/api/search?q=${encodeURIComponent(
-      query
-    )}&page=${page}&limit=${limit}`,
+    `${process.env.NEXT_PUBLIC_API_URL}/api/recent`,
     {
       method: "GET",
       headers: {
@@ -21,7 +19,7 @@ export const fetchSearchResults = async (query, page = 1, limit = 10) => {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message || "Search failed");
+    throw new Error(data.message || "Failed to fetch recent files");
   }
 
   return data;
