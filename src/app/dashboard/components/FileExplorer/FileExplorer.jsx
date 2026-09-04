@@ -592,46 +592,49 @@ export default function FileExplorer({ currentFolderId = null, setCurrentFolderI
         setPublicLink("");
     };
 
-    const handleShareFile = async () => {
+  const handleShareFile = async () => {
+    const email = shareEmail.trim();
 
-          
-    console.log("HANDLE SHARE CLICKED");
-    console.log("shareFile:", shareFile);
-    console.log("shareEmail:", shareEmail);
+    if (!email) {
+        setShareError("Email address is required");
+        return;
+    }
 
+    if (!shareFile) {
+        setShareError("File not selected");
+        return;
+    }
 
-        const email = shareEmail.trim();
+    try {
+        setIsSharing(true);
+        setShareError("");
 
-        if (!email) {
-            setShareError("Email address is required");
-            return;
-        }
+        console.log("HANDLE SHARE CLICKED");
+        console.log("shareFile:", shareFile);
+        console.log("shareEmail:", email);
+        console.log("shareRole:", shareRole);
 
-        if (!shareFile) {
-            return;
-        }
+        const data = await createFileShare({
+            resourceId: shareFile.id,
+            email: email,
+            role: shareRole,
+        });
 
-        try {
-            setIsSharing(true);
-            setShareError("");
+        console.log("SHARE SUCCESS:", data);
 
-            const data = await createFileShare({
-                resourceId: shareFile.id,
-                email,
-                role: shareRole
-            });
+        alert(data?.message || "File shared successfully!");
 
-            alert(data?.message || "File shared successfully!");
+        closeShareModal();
 
-            closeShareModal();
-        } catch (error) {
-            console.error("Share file error:", error);
+    } catch (error) {
+        console.error("SHARE FILE ERROR:", error);
 
-            setShareError(error.message || "Failed to share file");
-        } finally {
-            setIsSharing(false);
-        }
-    };
+        setShareError(error.message || "Failed to share file");
+
+    } finally {
+        setIsSharing(false);
+    }
+};
 
     const handleGenerateLink = async () => {
         if (!shareFile) {
