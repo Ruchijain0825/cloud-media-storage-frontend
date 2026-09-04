@@ -1,4 +1,4 @@
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/api`;
+const API_URL = "https://cloud-media-storage-backend.onrender.com/api";
 
 export const createFileShare = async ({ resourceId, email, role }) => {
   const token = localStorage.getItem("accessToken");
