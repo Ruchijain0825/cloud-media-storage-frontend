@@ -95,7 +95,7 @@ export default function FileUpload({ currentFolderId }) {
 
             xhr.open(
                 "POST",
-                `${process.env.NEXT_PUBLIC_API_URL}/api/upload`
+                `${process.env.NEXT_PUBLIC_API_URL}/api/files/upload`
             );
 
             xhr.setRequestHeader(
