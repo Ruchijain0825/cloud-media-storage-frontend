@@ -1699,7 +1699,7 @@ export default function Dashboard() {
 
                                     const response =
                                       await fetch(
-                                        "http://localhost:8080/api/trash/restore",
+                                        `${process.env.NEXT_PUBLIC_API_URL}/api/trash/restore`,
                                         {
                                           method:
                                             "POST",
