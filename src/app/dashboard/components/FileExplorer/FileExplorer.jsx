@@ -593,6 +593,13 @@ export default function FileExplorer({ currentFolderId = null, setCurrentFolderI
     };
 
     const handleShareFile = async () => {
+
+          
+    console.log("HANDLE SHARE CLICKED");
+    console.log("shareFile:", shareFile);
+    console.log("shareEmail:", shareEmail);
+
+
         const email = shareEmail.trim();
 
         if (!email) {
