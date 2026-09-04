@@ -592,7 +592,7 @@ export default function FileExplorer({ currentFolderId = null, setCurrentFolderI
         setPublicLink("");
     };
 
-  const handleShareFile = async () => {
+const handleShareFile = async () => {
     const email = shareEmail.trim();
 
     if (!email) {
@@ -628,14 +628,17 @@ export default function FileExplorer({ currentFolderId = null, setCurrentFolderI
 
     } catch (error) {
         console.error("SHARE FILE ERROR:", error);
-       alert(data?.message || "File shared successfully!");
-        setShareError(error.message || "Failed to share file");
+
+        const errorMessage =
+            error?.message || "Failed to share file";
+
+        setShareError(errorMessage);
+        alert(errorMessage);
 
     } finally {
         setIsSharing(false);
     }
 };
-
     const handleGenerateLink = async () => {
         if (!shareFile) {
             return;
