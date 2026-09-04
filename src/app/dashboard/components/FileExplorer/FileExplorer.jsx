@@ -628,7 +628,7 @@ export default function FileExplorer({ currentFolderId = null, setCurrentFolderI
 
     } catch (error) {
         console.error("SHARE FILE ERROR:", error);
-
+       alert(data?.message || "File shared successfully!");
         setShareError(error.message || "Failed to share file");
 
     } finally {
