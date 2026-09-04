@@ -1,5 +1,6 @@
 const API_URL = "https://cloud-media-storage-backend.onrender.com/api";
-
+console.log("SHARE API URL:", `${API_URL}/shares`);
+console.log("SHARE TOKEN EXISTS:", !!token);
 export const createFileShare = async ({ resourceId, email, role }) => {
   const token = localStorage.getItem("accessToken");
 
@@ -16,6 +17,8 @@ export const createFileShare = async ({ resourceId, email, role }) => {
       role,
     }),
   });
+  console.log("SHARE STATUS:", response.status);
+console.log("SHARE RESPONSE:", await response.clone().text());
 
   const data = await response.json();
 
